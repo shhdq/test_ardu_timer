@@ -1,105 +1,66 @@
-// ========== PIN DEFINĪCIJAS ==========
-const int ledPin = 13;        // LED pins - konstante, kas nemainās programmas izpildes laikā
-const int buzzerPin = 8;      // Skaņotāja pins
-const int buttonPin = 2;      // Pogas pins
+// Pin definīcijas - konstantes, kas nemainās programmas darbības laikā
+#define RED_LED     21    // Sarkanā LED uz GPIO21
+#define GREEN_LED   19    // Zaļā LED uz GPIO19
 
-// ========== TAIMERA MAINĪGIE ==========
-// hw_timer_t - ESP32 aparatūras taimera struktūras tips
-// * - norādes operators (pointer), norāda uz atmiņas adresi, kur glabājas taimera objekts
-// NULL - sākotnējā vērtība, kas norāda, ka norāde nekur nerāda
-hw_timer_t *blinkTimer = NULL;
+// Taimeru objektu norādes (pointers)
+// hw_timer_t - ESP32 taimera datu tips
+// * - norādes (pointer) operators, kas norāda uz mainīgā atrašanās vietu atmiņā
+// NULL - sākotnējā vērtība, kas norāda, ka pointer nekur nerāda
+hw_timer_t *Red_timer = NULL;    // Pointer uz sarkano LED taimeri
+hw_timer_t *Green_timer = NULL;  // Pointer uz zaļo LED taimeri
 
-// volatile - norāda kompilatoram, ka šī mainīgā vērtība var mainīties pārtraukumos
-// bool - loģiskais tips (true/false), aizņem 1 baitu atmiņā
-volatile bool isBlinking = true;    // Kontrolē LED mirgošanas stāvokli
-volatile bool buttonPressed = false; // Kontrolē pogas nospiešanas stāvokli
-
-// ========== PĀRTRAUKUMU APSTRĀDES FUNKCIJAS ==========
-// void - funkcija neatgriež vērtību
-// IRAM_ATTR - atribūts, kas norāda, ka funkcija jāievieto ātrās piekļuves IRAM atmiņā
-// Tas ir svarīgi pārtraukumu funkcijām, jo tām jāizpildās ātri
-void IRAM_ATTR onTimer() {
-    if (isBlinking) {
-        // digitalRead() - nolasa pina stāvokli (0 vai 1)
-        // ! - loģiskā inversija (NOT operators)
-        // digitalWrite() - iestata pina stāvokli
-        digitalWrite(ledPin, !digitalRead(ledPin));
-        
-        // Pārbaudam LED stāvokli un kontrolējam skaņu
-        if (digitalRead(ledPin)) {
-            tone(buzzerPin, 1000);  // Ieslēdz skaņu ar 1kHz frekvenci
-        } else {
-            noTone(buzzerPin);      // Izslēdz skaņu
-        }
-    }
+// Pārtraukuma apstrādes funkcijas
+// void - funkcija neko neatgriež
+// IRAM_ATTR - norāda kompilatoram likt šo funkciju ātrājā IRAM atmiņā
+// Tas ir svarīgi, jo pārtraukuma funkcijām jāizpildās ātri
+void IRAM_ATTR onRedTimer(){
+    // !digitalRead() - invertē LED stāvokli (ja bija 1, būs 0 un otrādi)
+    digitalWrite(RED_LED, !digitalRead(RED_LED));
 }
 
-// Pogas pārtraukuma apstrādes funkcija
-// Tiek izsaukta, kad notiek pogas nospiešana
-void IRAM_ATTR buttonInterrupt() {
-    buttonPressed = true;   // Iestatām pogas stāvokļa karogu
-    isBlinking = false;     // Apturams mirgošanu
+void IRAM_ATTR onGreenTimer(){
+    digitalWrite(GREEN_LED, !digitalRead(GREEN_LED));
 }
 
-// ========== SETUP FUNKCIJA ==========
-// Tiek izpildīta vienu reizi pēc ieslēgšanas
 void setup() {
-    // Inicializējam seriālo komunikāciju ar 115200 baudu ātrumu
-    Serial.begin(115200);
+    // Piņu konfigurācija kā izejas
+    pinMode(RED_LED, OUTPUT);    // LED piņš kā izeja
+    pinMode(GREEN_LED, OUTPUT);
     
-    // Konfigurējam pinu režīmus
-    pinMode(ledPin, OUTPUT);         // LED pins kā izeja
-    pinMode(buzzerPin, OUTPUT);      // Skaņotāja pins kā izeja
-    pinMode(buttonPin, INPUT_PULLUP); // Poga ar iebūvēto pull-up rezistoru
+    // === SARKANĀS LED TAIMERA IESTATĪŠANA ===
+    // timerBegin() atgriež pointer uz taimera objektu
+    Red_timer = timerBegin(0,     // Taimera numurs (0-3)
+                          80,     // Preskaleris (dala CPU 80MHz/80 = 1MHz)
+                          true);  // Skaitīt uz augšu
     
-    // Konfigurējam pogas pārtraukumu
-    // digitalPinToInterrupt() - konvertē pina numuru uz pārtraukuma numuru
-    // FALLING - pārtraukums tiek izsaukts, kad signāls mainās no HIGH uz LOW
-    attachInterrupt(digitalPinToInterrupt(buttonPin), buttonInterrupt, FALLING);
+    // Pievieno pārtraukuma funkciju
+    // &onRedTimer - & ir adreses operators, kas norāda uz funkcijas atrašanās vietu atmiņā                    
+    timerAttachInterrupt(Red_timer,      // Taimera pointer
+                        &onRedTimer,     // Funkcijas adrese
+                        true);          // Pārtraukums uz augšējo fronti
+
+    // Iestata taimera periodu
+    timerAlarmWrite(Red_timer,      // Taimera pointer
+                   1000000,        // 1 sekunde mikrosekundēs
+                   true);         // Automātiska pārlāde
+
+    timerAlarmEnable(Red_timer);  // Aktivizē taimeri
+
+    // === ZAĻĀS LED TAIMERA IESTATĪŠANA ===
+    // Līdzīgi kā sarkanai LED, bet ar citu periodu
+    Green_timer = timerBegin(1,     // Izmantojam otro taimeri (1)
+                            80,     // Tas pats preskaleris
+                            true);  
     
-    // ===== TAIMERA KONFIGURĀCIJA =====
-    // 1. Inicializējam taimeri
-    // timerBegin(timer_nr, prescaler, countUp)
-    // - timer_nr: 0-3 (ESP32 ir 4 taimeri)
-    // - prescaler: 80 (dala 80MHz CPU frekvenci ar 80, iegūstot 1MHz)
-    // - countUp: true (skaita uz augšu)
-    blinkTimer = timerBegin(0, 80, true);
+    timerAttachInterrupt(Green_timer, &onGreenTimer, true);
     
-    // 2. Pievienojam pārtraukuma apstrādes funkciju
-    // &onTimer - funkcijas adreses operators (&)
-    timerAttachInterrupt(blinkTimer, &onTimer, true);
+    timerAlarmWrite(Green_timer,     
+                   500000,          // 0.5 sekundes (500,000 mikrosekundes)
+                   true);          
     
-    // 3. Iestatām taimera vērtību
-    // 500000 mikrosekundes = 0.5 sekundes
-    // true - automātiska pārlāde
-    timerAlarmWrite(blinkTimer, 500000, true);
-    
-    // 4. Startējam taimeri
-    timerAlarmEnable(blinkTimer);
-    
-    Serial.println("Sistema inicializeta");
+    timerAlarmEnable(Green_timer);
 }
 
-// ========== GALVENĀ PROGRAMMAS CILPA ==========
 void loop() {
-    // Pārbaudam vai poga ir nospiesta
-    if (buttonPressed) {
-        Serial.println("Poga nospiesta - pauze 10 sekundes");
-        
-        // Izslēdzam LED un skaņu
-        digitalWrite(ledPin, LOW);   // LOW = 0V uz pina
-        noTone(buzzerPin);          // Izslēdzam skaņu
-        
-        delay(10000);  // Gaidām 10 sekundes (10000 milisekundes)
-        
-        // Atjaunojam normālo darbību
-        buttonPressed = false;  // Notīrām pogas karogu
-        isBlinking = true;      // Atļaujam mirgošanu
-        
-        Serial.println("Atsākam normālo darbību");
-    }
-    
-    // Mazs delay, lai samazinātu procesora noslodzi
-    // Tas nav kritisks, jo LED kontroli veic taimeris
-    delay(100);
+    // Tukša cilpa, jo visu darbu veic taimeri caur pārtraukumiem
 }
